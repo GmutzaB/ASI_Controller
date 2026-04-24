@@ -1,0 +1,19 @@
+profiles:
+  default:
+    fqbn: 
+    platforms:
+      - platform: arduino:zephyr
+    libraries:
+      - SHT85 (0.6.3)
+      - dependency: ArxContainer (0.7.0)
+      - dependency: ArxTypeTraits (0.3.2)
+      - dependency: DebugLog (0.8.4)
+      - MsgPack (0.4.2)
+      - dependency: Arduino_RPClite (0.2.1)
+      - Arduino_RouterBridge (0.4.1)
+      - SoftI2C (1.0.0)
+      - dependency: Adafruit BusIO (1.17.4)
+      - Adafruit TSL2591 Library (1.4.5)
+      - Adafruit Unified Sensor (1.1.15)
+
+default_profile: default
