@@ -15,6 +15,7 @@ Adafruit_TSL2591 tsl = Adafruit_TSL2591(2591);
 bool tslReady = false;
 
 // Function Declartations
+uint8_t sht85_crc8(const uint8_t *data, uint8_t len);
 String read_sht85(String unused);
 String read_light(String unused);
 String read_light1(String unused);
@@ -24,6 +25,21 @@ String read_serial(String unused);
 
 
 // Redeclare SHT85 for I/O pins
+uint8_t sht85_crc8(const uint8_t *data, uint8_t len) {
+  uint8_t crc = 0xFF;
+  for (uint8_t i = 0; i < len; i++) {
+    crc ^= data[i];
+    for (uint8_t bit = 0; bit < 8; bit++) {
+      if (crc & 0x80) {
+        crc = (crc << 1) ^ 0x31;
+      } else {
+        crc <<= 1;
+      }
+    }
+  }
+  return crc;
+}
+
 bool readSHTValues(float &tempC, float &humidity){
   softWire.beginTransmission(SHT85_ADDRESS);
   softWire.write(0x24);
@@ -40,11 +56,21 @@ bool readSHTValues(float &tempC, float &humidity){
   
   uint8_t tMSB = softWire.read();
   uint8_t tLSB = softWire.read();
-  softWire.read();
+  uint8_t tCRC = softWire.read();
 
   uint8_t hMSB = softWire.read();
   uint8_t hLSB = softWire.read();
-  softWire.read();
+  uint8_t hCRC = softWire.read();
+
+  uint8_t tempBytes[2] = {tMSB, tLSB};
+  uint8_t humidBytes[2] = {hMSB, hLSB};
+
+  if (sht85_crc8(tempBytes, 2) != tCRC) {
+    return false;
+  }
+  if (sht85_crc8(humidBytes, 2) != hCRC) {
+    return false;
+  }
 
   uint16_t rawTemp = ((uint16_t)tMSB << 8) | tLSB;
   uint16_t rawHum = ((uint16_t)hMSB << 8) | hLSB;
@@ -160,8 +186,14 @@ String get_environment(String unused){
     uint32_t lum = tsl.getFullLuminosity();
     ir = lum >> 16;
     full = lum & 0xFFFF;
-    visible = full - ir;
     lux = event.light;
+
+    // Sanity checks: disconnected/noisy bus often yields impossible values.
+    if (full < ir || isnan(lux)) {
+      tslDataOK = false;
+    } else {
+      visible = full - ir;
+    }
   }
 
   bool doomsdayProtocol = !(shtOK && tslDataOK);
