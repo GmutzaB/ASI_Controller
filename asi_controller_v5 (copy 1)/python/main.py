@@ -4,6 +4,7 @@ import time
 import os
 import cv2
 import base64
+import logging
 import serial
 import struct
 import subprocess
@@ -47,6 +48,17 @@ print("=== SAVING FILES TO:", CAPTURE_DIR, "===")
 
 os.makedirs(CAPTURE_DIR, exist_ok = True)
 os.makedirs(PENDING_DIR, exist_ok = True)
+
+LOG_FILE = os.path.join(CAPTURE_DIR, "asi_controller.log")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("asi_controller")
 
 
 def heater_script_candidates():
@@ -247,6 +259,41 @@ def valid_env(env):
 
         return True, "VALUES_OK"
 
+
+def get_failed_sensors(env):
+    failed_sensors = []
+    sensor_status = env.get("sensor_status") or {}
+
+    # Prefer firmware-level status when available.
+    if sensor_status.get("sht85_ok") is False:
+        failed_sensors.append("SHT85")
+    if sensor_status.get("tsl2591_ok") is False:
+        failed_sensors.append("TSL2591")
+
+    firmware_failed = env.get("failed_sensors")
+    if isinstance(firmware_failed, str) and firmware_failed.strip():
+        for name in firmware_failed.split(","):
+            clean_name = name.strip()
+            if clean_name and clean_name not in failed_sensors:
+                failed_sensors.append(clean_name)
+
+    if not env.get("ok", False):
+        failed_sensors.append("ENVIRONMENT_PACKET")
+    if env.get("temp_c") is None:
+        failed_sensors.append("SHT85_TEMP")
+    if env.get("humidity") is None:
+        failed_sensors.append("SHT85_HUMIDITY")
+    if env.get("lux") is None:
+        failed_sensors.append("TSL2591_LUX")
+    if env.get("visible") is None:
+        failed_sensors.append("TSL2591_VISIBLE")
+    if env.get("ir") is None:
+        failed_sensors.append("TSL2591_IR")
+    if env.get("full") is None:
+        failed_sensors.append("TSL2591_FULL")
+    # De-duplicate while preserving order.
+    return list(dict.fromkeys(failed_sensors))
+
 # Heater Functions
 
 def heater_on():
@@ -374,6 +421,27 @@ def write_pending_metadata(image_name, env, decision):
         f.write(f"IR: {env.get('ir')}\n")
         f.write(f"Full: {env.get('full')}\n")
     print("Pending metadata written:", txt_path)
+
+
+def write_doomsday_log(env, failed_sensors):
+    now = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+    txt_path = PENDING_DIR + now + "_doomsday.txt"
+
+    with open(txt_path, "w") as f:
+        f.write(f"Timestamp: {now}\n")
+        f.write("DOOMSDAY_PROTOCOL: ACTIVE\n")
+        f.write(f"Failed Sensors: {', '.join(failed_sensors)}\n\n")
+        f.write("Environment Values\n")
+        f.write(f"OK: {env.get('ok')}\n")
+        f.write(f"Temperature C: {env.get('temp_c')}\n")
+        f.write(f"Temperature F: {env.get('temp_f')}\n")
+        f.write(f"Humidity: {env.get('humidity')}\n")
+        f.write(f"Lux: {env.get('lux')}\n")
+        f.write(f"Visible: {env.get('visible')}\n")
+        f.write(f"IR: {env.get('ir')}\n")
+        f.write(f"Full: {env.get('full')}\n")
+
+    logger.error("DOOMSDAY_PROTOCOL activated. Failed sensors: %s", ", ".join(failed_sensors))
         
 def write_skip_log(env, decision):
     now = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
@@ -411,12 +479,17 @@ def cleanup_old_files():
                     print(f"Cleanup error on {filename}:", e)
 
 # Transmit Function
-def transmit_data(image_path, env):
+def transmit_data(image_path, env, doomsday_active=False, failed_sensors=None):
     global LAST_SYNC_FAILED
+    if failed_sensors is None:
+        failed_sensors = []
     try:
         # Time sync status
         env_to_send = dict(env)
         env_to_send['time_sync_ok'] = not LAST_SYNC_FAILED
+        env_to_send['doomsday_protocol_active'] = doomsday_active
+        env_to_send['failed_sensors'] = failed_sensors
+        env_to_send['alert_team'] = doomsday_active
         
         # Send env packet
         env_bytes = json.dumps(env_to_send).encode('utf-8')
@@ -458,7 +531,7 @@ def transmit_data(image_path, env):
         print("Transfer complete")
 
     except Exception as e:
-        print("Transmit error:", e)
+        logger.exception("Transmit error: %s", e)
 
 # Main Cycle
 
@@ -472,18 +545,28 @@ def run_cycle():
     humidity = env.get("humidity")
 
     try:
-        if temp < HEATER_TEMP_THRESHOLD_C or humidity > HEATER_HUMIDITY_THRESHOLD:
+        if temp is not None and humidity is not None and (
+            temp < HEATER_TEMP_THRESHOLD_C or humidity > HEATER_HUMIDITY_THRESHOLD
+        ):
             heater_on()
-        else:
+        elif temp is not None and humidity is not None:
             heater_off()
+        else:
+            logger.warning("Skipping heater command because sensor data is missing")
     except subprocess.TimeoutExpired:
-        print("WARNING: Heater comman timeout")
+        logger.warning("Heater command timeout")
     except Exception as e:
-        print("WARNING: Heater error:", e)
+        logger.exception("Heater error: %s", e)
         
 
-    
+    failed_sensors = get_failed_sensors(env)
+    doomsday_active = len(failed_sensors) > 0
+
     ok_to_capture, decision = valid_env(env)
+    if doomsday_active:
+        write_doomsday_log(env, failed_sensors)
+        ok_to_capture = True
+        decision = f"DOOMSDAY_PROTOCOL_ACTIVE:{','.join(failed_sensors)}"
     
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     image_name = f"image_{timestamp}"
@@ -495,15 +578,15 @@ def run_cycle():
             write_pending_metadata(image_name, env, "IMAGE_CAPTURED")
             image_path = CAPTURE_DIR + image_name + ".jpg"
             print("transmitting to TS-7250-V3")
-            transmit_data(image_path, env)
+            transmit_data(image_path, env, doomsday_active, failed_sensors)
         else:
             write_skip_log(env, "CAMERA_FAILED")
             print("transmitting to TS-7250-V3")
-            transmit_data(None, env)
+            transmit_data(None, env, doomsday_active, failed_sensors)
     else:
         write_skip_log(env, decision)
         print("transmitting to TS-7250-V3")
-        transmit_data(None, env)
+        transmit_data(None, env, doomsday_active, failed_sensors)
 
 def loop():
     global ctr
@@ -523,7 +606,7 @@ def loop():
         run_cycle()
         
     except Exception as e:
-        print("Python error:", e)
+        logger.exception("Python error: %s", e)
         
     print(f"Entering low power wait for {MIN_CAPTURE_INTERVAL_SEC} seconds...")
     time.sleep(MIN_CAPTURE_INTERVAL_SEC)

@@ -148,37 +148,74 @@ String get_environment(String unused){
   float humidity = 0;
   bool shtOK = readSHTValues(tempC, humidity);
   float tempF = (tempC * 9.0 / 5.0) + 32.0;
+  bool tslDataOK = tslReady;
+  float lux = 0.0;
+  uint16_t ir = 0;
+  uint16_t full = 0;
+  uint16_t visible = 0;
+
+  if (tslDataOK) {
+    sensors_event_t event;
+    tsl.getEvent(&event);
+    uint32_t lum = tsl.getFullLuminosity();
+    ir = lum >> 16;
+    full = lum & 0xFFFF;
+    visible = full - ir;
+    lux = event.light;
+  }
+
+  bool doomsdayProtocol = !(shtOK && tslDataOK);
+  String failedSensors = "";
+  if (!shtOK) {
+    failedSensors += "SHT85";
+  }
+  if (!tslDataOK) {
+    if (failedSensors.length() > 0) failedSensors += ",";
+    failedSensors += "TSL2591";
+  }
   //Start of Json data string
   String json = "{";
 
   json += "\"ok\":";
-  if (shtOK && tslReady) {
+  if (shtOK && tslDataOK) {
     json += "true";
   } else{
     json += "false";
   }
-  //SHT85 data
-  json += ",\"temp_c\":";
-  json += String(tempC, 2);
-
-  json += ",\"temp_f\":";
-  json += String(tempF, 2);
   
-  json += ",\"humidity\":";
-  json += String(humidity, 2);
+  // Explicit firmware-level health state
+  json += ",\"doomsday_protocol\":";
+  json += doomsdayProtocol ? "true" : "false";
+  json += ",\"failed_sensors\":\"";
+  json += failedSensors;
+  json += "\"";
+  json += ",\"sensor_status\":{";
+  json += "\"sht85_ok\":";
+  json += shtOK ? "true" : "false";
+  json += ",\"tsl2591_ok\":";
+  json += tslDataOK ? "true" : "false";
+  json += "}";
+
+  //SHT85 data
+  if (shtOK) {
+    json += ",\"temp_c\":";
+    json += String(tempC, 2);
+
+    json += ",\"temp_f\":";
+    json += String(tempF, 2);
+    
+    json += ",\"humidity\":";
+    json += String(humidity, 2);
+  } else {
+    json += ",\"temp_c\":null";
+    json += ",\"temp_f\":null";
+    json += ",\"humidity\":null";
+  }
 
   //TSL2591 data
-  if (tslReady) {
-    sensors_event_t event;
-    tsl.getEvent(&event);
-    
-    uint32_t lum = tsl.getFullLuminosity();
-    uint16_t ir = lum >> 16;
-    uint16_t full = lum & 0xFFFF;
-    uint16_t visible = full - ir;
-
+  if (tslDataOK) {
     json += ",\"lux\":";
-    json += String (event.light, 2);
+    json += String(lux, 2);
 
     json += ",\"visible\":";
     json += String(visible);
