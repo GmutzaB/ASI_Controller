@@ -7,6 +7,7 @@ import base64
 import serial
 import struct
 import subprocess
+import shutil
 from arduino.app_utils import App, Bridge
 from datetime import datetime
 from PIL import Image
@@ -27,6 +28,18 @@ PENDING_DIR = "/app/python/"
 # Heater Directory path 
 
 CUSBA = "/app/python/cusba64"
+HEATER_CMD_PATHS = [
+    "/app/python/heater_cmd.txt",
+    "/home/arduino/ArduinoApps/asi_controller_v5/python/heater_cmd.txt",
+]
+HEATER_CONTROL_SCRIPT_PATHS = [
+    "/app/python/heater_control.sh",
+    "/home/arduino/ArduinoApps/asi_controller_v5/heater_control.sh",
+    "/home/arduino/heater_control.sh",
+]
+HEATER_APPLY_COOLDOWN_SEC = 5
+LAST_HEATER_APPLY_TIME = 0.0
+LAST_HEATER_COMMAND = "OFF"
 
 #"/home/arduino/ArduinoApps/asi_controller_v5/python/cusba64"
 
@@ -34,6 +47,33 @@ print("=== SAVING FILES TO:", CAPTURE_DIR, "===")
 
 os.makedirs(CAPTURE_DIR, exist_ok = True)
 os.makedirs(PENDING_DIR, exist_ok = True)
+
+
+def heater_script_candidates():
+    main_dir = os.path.dirname(os.path.abspath(__file__))
+    return [
+        os.path.join(main_dir, "heater_control.sh"),
+        os.path.join(os.path.dirname(main_dir), "heater_control.sh"),
+        *HEATER_CONTROL_SCRIPT_PATHS,
+    ]
+
+
+def resolve_cusba():
+    candidates = [
+        CUSBA,
+        "/home/arduino/ArduinoApps/asi_controller_v5/python/cusba64",
+        "/home/arduino/cusba64",
+        "cusba64",
+    ]
+    for candidate in candidates:
+        if "/" in candidate:
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+        else:
+            found = shutil.which(candidate)
+            if found:
+                return found
+    return None
 
 # Presets
 
@@ -210,17 +250,66 @@ def valid_env(env):
 # Heater Functions
 
 def heater_on():
-    import os
-    print("debug CWD:", os.getcwd())
-    print("Debug writing to /app/python/heater_cmd.txt")
-    with open("/app/python/heater_cmd.txt", "w") as f:
-        f.write("ON")
-    print("Heater ON command sent")
+    set_heater("ON")
 
 def heater_off():
-    with open("/app/python/heater_cmd.txt", "w") as f:
-        f.write("OFF")
-    print("Heater OFF command sent")
+    set_heater("OFF")
+
+
+def set_heater(state: str):
+    state = state.strip().upper()
+    cmd = "1:3" if state == "ON" else "0:3"
+
+    # Keep command-file write for debug visibility.
+    for path in HEATER_CMD_PATHS:
+        parent_dir = os.path.dirname(path)
+        if parent_dir and not os.path.isdir(parent_dir):
+            continue
+        try:
+            with open(path, "w") as f:
+                f.write(state)
+            print(f"Heater command {state} written to {path}")
+            break
+        except Exception as e:
+            print(f"WARNING: Could not write {path}: {e}")
+
+    global LAST_HEATER_APPLY_TIME
+    now = time.time()
+    if (now - LAST_HEATER_APPLY_TIME) < HEATER_APPLY_COOLDOWN_SEC:
+        return False
+
+    cusba_candidates = [
+        resolve_cusba(),
+        "/home/arduino/ArduinoApps/asi_controller_v5/python/cusba64",
+        "/home/arduino/cusba64",
+    ]
+    usb_candidates = ["ttyUSB0", "ttyUSB1", "ttyUSB2"]
+
+    for cusba in cusba_candidates:
+        if not cusba:
+            continue
+        if not (os.path.isfile(cusba) and os.access(cusba, os.X_OK)):
+            continue
+        for usb in usb_candidates:
+            try:
+                result = subprocess.run(
+                    [cusba, f"/S:{usb}", cmd],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    LAST_HEATER_APPLY_TIME = now
+                    print(f"Heater {state} OK via {cusba} /S:{usb} {cmd}")
+                    if result.stdout.strip():
+                        print("CUSBA stdout:", result.stdout.strip())
+                    return True
+                print(f"Heater {state} failed via {cusba} {usb}: {result.stderr.strip()}")
+            except Exception as e:
+                print(f"Heater {state} exception via {cusba} {usb}: {e}")
+
+    print(f"WARNING: Heater {state} command failed on all cusba/tty candidates")
+    return False
 
 # Camera Function
 
@@ -383,7 +472,7 @@ def run_cycle():
     humidity = env.get("humidity")
 
     try:
-        if temp < HEATER_TEMP_THRESHOLD_C or humidty > HEATER_HUMIDITY_THRESHOLD:
+        if temp < HEATER_TEMP_THRESHOLD_C or humidity > HEATER_HUMIDITY_THRESHOLD:
             heater_on()
         else:
             heater_off()

@@ -1,9 +1,14 @@
 #!/bin/bash
 CUSBA="/home/arduino/ArduinoApps/asi_controller_v5/python/cusba64"
-FILE=$"/home/arduino/ArduinoApps/asi_controller_v5/python/heater_cmd.txt"
+FILE="/home/arduino/ArduinoApps/asi_controller_v5/python/heater_cmd.txt"
+
+# Prefer AppLab container path when available.
+if [ -f "/app/python/heater_cmd.txt" ]; then
+    FILE="/app/python/heater_cmd.txt"
+fi
 
 chmod 666 "$FILE" 2>/dev/null
-CMD=$(cat "$FILE" 2>/dev/null)
+CMD="$(tr -d '\r\n' < "$FILE" 2>/dev/null)"
 chmod 666 "$FILE" 2>/dev/null
 
 if [ "$CMD" = "ON" ]; then
