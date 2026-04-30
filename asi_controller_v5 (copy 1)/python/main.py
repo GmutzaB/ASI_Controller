@@ -170,7 +170,8 @@ def read_incoming_packet():
     if len(raw) < 6 + length + 2:
         return None, None
 
-    data = raw[600000:6 + length]
+    # Data starts immediately after 6-byte header.
+    data = raw[6:6 + length]
     received_chk = raw[6 + length]
     end_byte = raw[6 + length + 1]
     
@@ -231,30 +232,53 @@ def request_time_sync():
 # Environmental Functions
 
 def read_environment():
-    raw = Bridge.call("get_environment", "")
-    return json.loads(raw)
+    try:
+        raw = Bridge.call("get_environment", "")
+        env = json.loads(raw)
+        if not isinstance(env, dict):
+            raise ValueError("Environment payload is not a JSON object")
+        return env
+    except Exception as e:
+        logger.exception("read_environment failed: %s", e)
+        # Fail-safe payload: force doomsday but keep capture/transmit alive.
+        return {
+            "ok": False,
+            "temp_c": None,
+            "temp_f": None,
+            "humidity": None,
+            "lux": None,
+            "visible": None,
+            "ir": None,
+            "full": None,
+            "sensor_status": {
+                "sht85_ok": False,
+                "tsl2591_ok": False,
+            },
+            "failed_sensors": "ENVIRONMENT_READ_ERROR",
+            "doomsday_protocol": True,
+        }
     
 
 def valid_env(env):
         if not env.get("ok", False):
                 return False, "ENVIRONMENT_PACKET_DAMAGED"
 
-        if env["temp_c"] is None:
+        if env.get("temp_c") is None:
                 return False, "TEMP_MISSING"
         
-        if env["humidity"] is None:
+        if env.get("humidity") is None:
             return False, "HUMIDITY_MISSING"
         
-        if env["lux"] is None:
+        if env.get("lux") is None:
             return False, "LUX_MISSING"
             
-        if env["temp_c"] < TEMP_MIN_C or env["temp_c"] > TEMP_MAX_C:
+        if env.get("temp_c") < TEMP_MIN_C or env.get("temp_c") > TEMP_MAX_C:
                 return False, "TEMP_OUT_OF_ACCEPTABLE_RANGE"
 
-        if env["humidity"] < HUMIDITY_MIN or env["humidity"] > HUMIDITY_MAX:
+        if env.get("humidity") < HUMIDITY_MIN or env.get("humidity") > HUMIDITY_MAX:
                 return False, "HUMIDITY_OUT_OF_ACCEPTABLE_RANGE"
 
-        if env["lux"] > LUX_MAX:
+        if env.get("lux") > LUX_MAX:
                 return False, "TOO_BRIGHT"
 
         return True, "VALUES_OK"
@@ -276,6 +300,12 @@ def get_failed_sensors(env):
             clean_name = name.strip()
             if clean_name and clean_name not in failed_sensors:
                 failed_sensors.append(clean_name)
+    elif isinstance(firmware_failed, list):
+        for name in firmware_failed:
+            if isinstance(name, str):
+                clean_name = name.strip()
+                if clean_name and clean_name not in failed_sensors:
+                    failed_sensors.append(clean_name)
 
     if not env.get("ok", False):
         failed_sensors.append("ENVIRONMENT_PACKET")
@@ -370,7 +400,7 @@ def capture_image(image_name):
             break
         test_cap.release()
     
-    if not cap.isOpened():
+    if cap is None or not cap.isOpened():
         print("Camera not accessible")
         return False
 
@@ -562,7 +592,11 @@ def run_cycle():
     failed_sensors = get_failed_sensors(env)
     doomsday_active = len(failed_sensors) > 0
 
-    ok_to_capture, decision = valid_env(env)
+    try:
+        ok_to_capture, decision = valid_env(env)
+    except Exception as e:
+        logger.exception("valid_env failed: %s", e)
+        ok_to_capture, decision = False, "VALID_ENV_EXCEPTION"
     if doomsday_active:
         write_doomsday_log(env, failed_sensors)
         ok_to_capture = True
