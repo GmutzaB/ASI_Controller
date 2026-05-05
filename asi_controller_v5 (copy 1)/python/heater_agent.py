@@ -13,16 +13,22 @@ import time
 from datetime import datetime
 
 CMD_PATHS = [
+    "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/heater_cmd.txt",
+    "/home/arduino/ArduinoApps/asi_controller_V5/python/heater_cmd.txt",
     "/home/arduino/ArduinoApps/asi_controller_v5/python/heater_cmd.txt",
     "/app/python/heater_cmd.txt",
 ]
 
 LOG_PATHS = [
+    "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/heater_agent.log",
+    "/home/arduino/ArduinoApps/asi_controller_V5/python/heater_agent.log",
     "/home/arduino/ArduinoApps/asi_controller_v5/python/heater_agent.log",
     "/tmp/heater_agent.log",
 ]
 
 CUSBA_CANDIDATES = [
+    "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/cusba64",
+    "/home/arduino/ArduinoApps/asi_controller_V5/python/cusba64",
     "/home/arduino/ArduinoApps/asi_controller_v5/python/cusba64",
     "/app/python/cusba64",
     "/home/arduino/cusba64",
@@ -36,8 +42,11 @@ STATE_FILE = "/tmp/heater_agent_last_command.txt"
 
 def pick_existing_path(paths):
     for path in paths:
+        if os.path.isfile(path):
+            return path
+    for path in paths:
         parent = os.path.dirname(path)
-        if os.path.isdir(parent):
+        if parent and os.path.isdir(parent):
             return path
     return paths[0]
 
@@ -139,6 +148,19 @@ def main():
 
     last_seen = read_last_command()
     last_mtime = 0.0
+
+    # Permanent reliability fix:
+    # On startup, enforce whatever command is currently in heater_cmd.txt.
+    startup_cmd = read_cmd()
+    if startup_cmd in ("ON", "OFF"):
+        if apply_command(startup_cmd, cusba):
+            last_seen = startup_cmd
+            write_last_command(startup_cmd)
+            log(f"Startup sync applied: {startup_cmd}")
+        else:
+            log(f"WARNING: startup sync failed for {startup_cmd}")
+    else:
+        log(f"Startup sync skipped due to invalid command: {startup_cmd}")
 
     while True:
         try:

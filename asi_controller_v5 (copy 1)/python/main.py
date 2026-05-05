@@ -31,10 +31,12 @@ PENDING_DIR = "/app/python/"
 CUSBA = "/app/python/cusba64"
 HEATER_CMD_PATHS = [
     "/app/python/heater_cmd.txt",
+    "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/heater_cmd.txt",
     "/home/arduino/ArduinoApps/asi_controller_v5/python/heater_cmd.txt",
 ]
 HEATER_CONTROL_SCRIPT_PATHS = [
     "/app/python/heater_control.sh",
+    "/home/arduino/ArduinoApps/asi_controll_Cer_v5/heater_control.sh",
     "/home/arduino/ArduinoApps/asi_controller_v5/heater_control.sh",
     "/home/arduino/heater_control.sh",
 ]
@@ -44,7 +46,7 @@ LAST_HEATER_COMMAND = "OFF"
 # AppLab should only write command intent; external heater_agent.py applies to USB relay.
 HEATER_DIRECT_APPLY = False
 
-#"/home/arduino/ArduinoApps/asi_controller_v5/python/cusba64"
+#"/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/cusba64"
 
 print("=== SAVING FILES TO:", CAPTURE_DIR, "===")
 
@@ -75,6 +77,7 @@ def heater_script_candidates():
 def resolve_cusba():
     candidates = [
         CUSBA,
+        "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/cusba64",
         "/home/arduino/ArduinoApps/asi_controller_v5/python/cusba64",
         "/home/arduino/cusba64",
         "cusba64",
@@ -387,6 +390,7 @@ def set_heater(state: str):
 
     cusba_candidates = [
         resolve_cusba(),
+        "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/cusba64",
         "/home/arduino/ArduinoApps/asi_controller_v5/python/cusba64",
         "/home/arduino/cusba64",
     ]
