@@ -13,6 +13,8 @@ import time
 from datetime import datetime
 
 CMD_PATHS = [
+    "/home/arduino/heater_cmd.txt",
+    "/home/arduino/ArduinoApps/asi_contoll_cer_v5/python/heater_cmd.txt",
     "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/heater_cmd.txt",
     "/home/arduino/ArduinoApps/asi_controller_V5/python/heater_cmd.txt",
     "/home/arduino/ArduinoApps/asi_controller_v5/python/heater_cmd.txt",
@@ -20,6 +22,7 @@ CMD_PATHS = [
 ]
 
 LOG_PATHS = [
+    "/home/arduino/ArduinoApps/asi_contoll_cer_v5/python/heater_agent.log",
     "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/heater_agent.log",
     "/home/arduino/ArduinoApps/asi_controller_V5/python/heater_agent.log",
     "/home/arduino/ArduinoApps/asi_controller_v5/python/heater_agent.log",
@@ -27,11 +30,12 @@ LOG_PATHS = [
 ]
 
 CUSBA_CANDIDATES = [
+    "/home/arduino/cusba64",
+    "/home/arduino/ArduinoApps/asi_contoll_cer_v5/python/cusba64",
     "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/cusba64",
     "/home/arduino/ArduinoApps/asi_controller_V5/python/cusba64",
     "/home/arduino/ArduinoApps/asi_controller_v5/python/cusba64",
     "/app/python/cusba64",
-    "/home/arduino/cusba64",
     "cusba64",
 ]
 

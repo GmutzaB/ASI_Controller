@@ -31,11 +31,14 @@ PENDING_DIR = "/app/python/"
 CUSBA = "/app/python/cusba64"
 HEATER_CMD_PATHS = [
     "/app/python/heater_cmd.txt",
+    "/home/arduino/heater_cmd.txt",
+    "/home/arduino/ArduinoApps/asi_contoll_cer_v5/python/heater_cmd.txt",
     "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/heater_cmd.txt",
     "/home/arduino/ArduinoApps/asi_controller_v5/python/heater_cmd.txt",
 ]
 HEATER_CONTROL_SCRIPT_PATHS = [
     "/app/python/heater_control.sh",
+    "/home/arduino/ArduinoApps/asi_contoll_cer_v5/heater_control.sh",
     "/home/arduino/ArduinoApps/asi_controll_Cer_v5/heater_control.sh",
     "/home/arduino/ArduinoApps/asi_controller_v5/heater_control.sh",
     "/home/arduino/heater_control.sh",
@@ -77,6 +80,7 @@ def heater_script_candidates():
 def resolve_cusba():
     candidates = [
         CUSBA,
+        "/home/arduino/ArduinoApps/asi_contoll_cer_v5/python/cusba64",
         "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/cusba64",
         "/home/arduino/ArduinoApps/asi_controller_v5/python/cusba64",
         "/home/arduino/cusba64",
@@ -390,6 +394,7 @@ def set_heater(state: str):
 
     cusba_candidates = [
         resolve_cusba(),
+        "/home/arduino/ArduinoApps/asi_contoll_cer_v5/python/cusba64",
         "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/cusba64",
         "/home/arduino/ArduinoApps/asi_controller_v5/python/cusba64",
         "/home/arduino/cusba64",
