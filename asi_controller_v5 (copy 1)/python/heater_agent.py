@@ -13,12 +13,12 @@ import time
 from datetime import datetime
 
 CMD_PATHS = [
-    "/home/arduino/heater_cmd.txt",
     "/home/arduino/ArduinoApps/asi_contoll_cer_v5/python/heater_cmd.txt",
     "/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/heater_cmd.txt",
     "/home/arduino/ArduinoApps/asi_controller_V5/python/heater_cmd.txt",
     "/home/arduino/ArduinoApps/asi_controller_v5/python/heater_cmd.txt",
     "/app/python/heater_cmd.txt",
+    "/home/arduino/heater_cmd.txt",
 ]
 
 LOG_PATHS = [
@@ -131,11 +131,13 @@ def apply_command(cmd, cusba):
 
 def ensure_cmd_file_exists():
     parent = os.path.dirname(CMD_FILE)
-    os.makedirs(parent, exist_ok=True)
-    if not os.path.exists(CMD_FILE):
-        with open(CMD_FILE, "w") as f:
-            f.write("OFF")
-        log(f"Created {CMD_FILE} with OFF")
+    # Only create if the parent directory is valid on this host.
+    if parent and os.path.isdir(parent):
+        os.makedirs(parent, exist_ok=True)
+        if not os.path.exists(CMD_FILE):
+            with open(CMD_FILE, "w") as f:
+                f.write("OFF")
+            log(f"Created {CMD_FILE} with OFF")
 
 
 def main():
