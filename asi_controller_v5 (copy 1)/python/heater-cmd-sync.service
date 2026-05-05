@@ -1,0 +1,15 @@
+[Unit]
+Description=Sync AppLab heater_cmd to host path
+After=network.target
+
+[Service]
+Type=simple
+User=arduino
+Group=arduino
+ExecStart=/usr/bin/python3 /home/arduino/heater_cmd_sync.py
+Restart=always
+RestartSec=1
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -363,7 +363,7 @@ def set_heater(state: str):
     state = state.strip().upper()
 
     # Keep command-file write for debug visibility.
-    wrote_command = False
+    wrote_paths = []
     for path in HEATER_CMD_PATHS:
         parent_dir = os.path.dirname(path)
         if parent_dir and not os.path.isdir(parent_dir):
@@ -372,12 +372,11 @@ def set_heater(state: str):
             with open(path, "w") as f:
                 f.write(state)
             print(f"Heater command {state} written to {path}")
-            wrote_command = True
-            break
+            wrote_paths.append(path)
         except Exception as e:
             print(f"WARNING: Could not write {path}: {e}")
 
-    if not wrote_command:
+    if not wrote_paths:
         logger.error("Failed to write heater command file for state %s", state)
         return False
 
