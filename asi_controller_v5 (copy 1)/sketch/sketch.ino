@@ -215,18 +215,19 @@ String get_environment(String unused){
     json += "false";
   }
   
-  // Explicit firmware-level health state
-  json += ",\"doomsday_protocol\":";
-  json += doomsdayProtocol ? "true" : "false";
-  json += ",\"failed_sensors\":\"";
-  json += failedSensors;
-  json += "\"";
-  json += ",\"sensor_status\":{";
-  json += "\"sht85_ok\":";
-  json += shtOK ? "true" : "false";
-  json += ",\"tsl2591_ok\":";
-  json += tslDataOK ? "true" : "false";
-  json += "}";
+  // Add doomsday fields only when doomsday is active.
+  if (doomsdayProtocol) {
+    json += ",\"doomsday_protocol\":true";
+    json += ",\"failed_sensors\":\"";
+    json += failedSensors;
+    json += "\"";
+    json += ",\"sensor_status\":{";
+    json += "\"sht85_ok\":";
+    json += shtOK ? "true" : "false";
+    json += ",\"tsl2591_ok\":";
+    json += tslDataOK ? "true" : "false";
+    json += "}";
+  }
 
   //SHT85 data
   if (shtOK) {

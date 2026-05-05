@@ -1,0 +1,16 @@
+[Unit]
+Description=ASI Heater Relay Agent
+After=network.target
+
+[Service]
+Type=simple
+User=arduino
+Group=arduino
+WorkingDirectory=/home/arduino/ArduinoApps/asi_controller_v5/python
+ExecStart=/usr/bin/python3 /home/arduino/ArduinoApps/asi_controller_v5/python/heater_agent.py
+Restart=always
+RestartSec=2
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -41,6 +41,8 @@ HEATER_CONTROL_SCRIPT_PATHS = [
 HEATER_APPLY_COOLDOWN_SEC = 5
 LAST_HEATER_APPLY_TIME = 0.0
 LAST_HEATER_COMMAND = "OFF"
+# AppLab should only write command intent; external heater_agent.py applies to USB relay.
+HEATER_DIRECT_APPLY = False
 
 #"/home/arduino/ArduinoApps/asi_controller_v5/python/cusba64"
 
@@ -259,6 +261,23 @@ def read_environment():
         }
     
 
+def normalize_temperature_fields(env):
+    temp_c = env.get("temp_c")
+    if temp_c is None:
+        return env
+    expected_temp_f = (temp_c * 9.0 / 5.0) + 32.0
+    current_temp_f = env.get("temp_f")
+    if current_temp_f is None or abs(current_temp_f - expected_temp_f) > 0.25:
+        env["temp_f"] = round(expected_temp_f, 2)
+        logger.warning(
+            "Adjusted temp_f from %s to %.2f based on temp_c %.2f",
+            current_temp_f,
+            env["temp_f"],
+            temp_c,
+        )
+    return env
+    
+
 def valid_env(env):
         if not env.get("ok", False):
                 return False, "ENVIRONMENT_PACKET_DAMAGED"
@@ -335,9 +354,9 @@ def heater_off():
 
 def set_heater(state: str):
     state = state.strip().upper()
-    cmd = "1:3" if state == "ON" else "0:3"
 
     # Keep command-file write for debug visibility.
+    wrote_command = False
     for path in HEATER_CMD_PATHS:
         parent_dir = os.path.dirname(path)
         if parent_dir and not os.path.isdir(parent_dir):
@@ -346,9 +365,20 @@ def set_heater(state: str):
             with open(path, "w") as f:
                 f.write(state)
             print(f"Heater command {state} written to {path}")
+            wrote_command = True
             break
         except Exception as e:
             print(f"WARNING: Could not write {path}: {e}")
+
+    if not wrote_command:
+        logger.error("Failed to write heater command file for state %s", state)
+        return False
+
+    if not HEATER_DIRECT_APPLY:
+        # External heater agent reads heater_cmd.txt and applies CUSBA command.
+        return True
+
+    cmd = "1:3" if state == "ON" else "0:3"
 
     global LAST_HEATER_APPLY_TIME
     now = time.time()
@@ -517,9 +547,10 @@ def transmit_data(image_path, env, doomsday_active=False, failed_sensors=None):
         # Time sync status
         env_to_send = dict(env)
         env_to_send['time_sync_ok'] = not LAST_SYNC_FAILED
-        env_to_send['doomsday_protocol_active'] = doomsday_active
-        env_to_send['failed_sensors'] = failed_sensors
-        env_to_send['alert_team'] = doomsday_active
+        if doomsday_active:
+            env_to_send['doomsday_protocol_active'] = True
+            env_to_send['failed_sensors'] = failed_sensors
+            env_to_send['alert_team'] = True
         
         # Send env packet
         env_bytes = json.dumps(env_to_send).encode('utf-8')
@@ -568,25 +599,32 @@ def transmit_data(image_path, env, doomsday_active=False, failed_sensors=None):
 def run_cycle():
     # Check Environment
     env = read_environment()
+    env = normalize_temperature_fields(env)
     print("ENV =", env)
 
     # Heater control
     temp = env.get("temp_c")
     humidity = env.get("humidity")
 
+    heater_state = "LOW_POWER_MODE"
     try:
         if temp is not None and humidity is not None and (
             temp < HEATER_TEMP_THRESHOLD_C or humidity > HEATER_HUMIDITY_THRESHOLD
         ):
             heater_on()
+            heater_state = "HEATER_ON"
         elif temp is not None and humidity is not None:
             heater_off()
+            heater_state = "HEATER_OFF"
         else:
             logger.warning("Skipping heater command because sensor data is missing")
+            heater_state = "LOW_POWER_MODE"
     except subprocess.TimeoutExpired:
         logger.warning("Heater command timeout")
+        heater_state = "HEATER_COMMAND_TIMEOUT"
     except Exception as e:
         logger.exception("Heater error: %s", e)
+        heater_state = "HEATER_ERROR"
         
 
     failed_sensors = get_failed_sensors(env)
@@ -604,12 +642,24 @@ def run_cycle():
     
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     image_name = f"image_{timestamp}"
+
+    if doomsday_active:
+        cycle_mode = "DOOMSDAY_CAPTURE"
+    elif ok_to_capture:
+        cycle_mode = "GOOD_CAPTURE"
+    else:
+        cycle_mode = "BAD_CONDITIONS_SKIP"
+
+    env["heater_state"] = heater_state
+    env["cycle_mode"] = cycle_mode
     
     if ok_to_capture:
-        write_pending_metadata(image_name, env, "IMAGE_REQUESTED")
+        if not doomsday_active:
+            write_pending_metadata(image_name, env, "IMAGE_REQUESTED")
         success = capture_image(image_name)
         if success:
-            write_pending_metadata(image_name, env, "IMAGE_CAPTURED")
+            if not doomsday_active:
+                write_pending_metadata(image_name, env, "IMAGE_CAPTURED")
             image_path = CAPTURE_DIR + image_name + ".jpg"
             print("transmitting to TS-7250-V3")
             transmit_data(image_path, env, doomsday_active, failed_sensors)
@@ -618,7 +668,8 @@ def run_cycle():
             print("transmitting to TS-7250-V3")
             transmit_data(None, env, doomsday_active, failed_sensors)
     else:
-        write_skip_log(env, decision)
+        env["bad_conditions_reason"] = decision
+        write_skip_log(env, f"BAD_CONDITIONS_SKIP:{decision}")
         print("transmitting to TS-7250-V3")
         transmit_data(None, env, doomsday_active, failed_sensors)
 
