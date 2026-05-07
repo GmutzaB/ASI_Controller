@@ -10,7 +10,9 @@ import os
 import time
 from datetime import datetime
 
+# Source is where AppLab writes command intent.
 SRC_PATH = "/app/python/heater_cmd.txt"
+# Destination is where host-side heater_agent reads commands.
 DST_PATH = "/home/arduino/heater_cmd.txt"
 STATE_PATH = "/tmp/heater_cmd_sync_last.txt"
 LOG_PATH = "/tmp/heater_cmd_sync.log"
@@ -32,6 +34,7 @@ def read_cmd(path):
     try:
         with open(path, "r") as f:
             value = f.read().strip().upper()
+            # Only allow strict relay states; ignore corrupted content.
             if value in ("ON", "OFF"):
                 return value
     except Exception:
@@ -65,6 +68,7 @@ def main():
 
     while True:
         cmd = read_cmd(SRC_PATH)
+        # Write-through only on state transitions to avoid I/O churn.
         if cmd and cmd != last:
             try:
                 write_cmd(DST_PATH, cmd)

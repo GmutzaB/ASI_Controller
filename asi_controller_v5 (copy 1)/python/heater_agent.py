@@ -55,6 +55,7 @@ def pick_existing_path(paths):
     return paths[0]
 
 
+# Resolve once on startup so service behavior is deterministic.
 CMD_FILE = pick_existing_path(CMD_PATHS)
 LOG_FILE = pick_existing_path(LOG_PATHS)
 
@@ -110,6 +111,7 @@ def write_last_command(value):
 
 
 def apply_command(cmd, cusba):
+    # Relay channel mapping: 1:3 = ON, 0:3 = OFF for this hardware.
     relay_cmd = "1:3" if cmd == "ON" else "0:3"
     for usb in USB_CANDIDATES:
         try:
@@ -171,6 +173,7 @@ def main():
     while True:
         try:
             mtime = os.path.getmtime(CMD_FILE)
+            # Only re-read when the command file actually changes.
             if mtime != last_mtime:
                 last_mtime = mtime
                 cmd = read_cmd()
@@ -178,6 +181,7 @@ def main():
                     log(f"Ignoring invalid command: {cmd}")
                     time.sleep(POLL_SEC)
                     continue
+                # No-op if requested state already applied.
                 if cmd == last_seen:
                     time.sleep(POLL_SEC)
                     continue

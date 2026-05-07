@@ -46,7 +46,7 @@ HEATER_CONTROL_SCRIPT_PATHS = [
 HEATER_APPLY_COOLDOWN_SEC = 5
 LAST_HEATER_APPLY_TIME = 0.0
 LAST_HEATER_COMMAND = "OFF"
-# AppLab should only write command intent; external heater_agent.py applies to USB relay.
+# AppLab should only write command intent, then external heater_agent.py applies to USB relay.
 HEATER_DIRECT_APPLY = False
 
 #"/home/arduino/ArduinoApps/asi_controll_Cer_v5/python/cusba64"
@@ -127,7 +127,7 @@ PACKET_TIME_RESPONSE = 0x05
 # Clean up function
 CLEANUP_INTERVAL = 10
 MAX_FILE_AGE_SEC = 4200
-PROTECTED_FILES = {'requirements.txt'}
+PROTECTED_FILES = {'requirements.txt', 'heater_cmd.txt'}
 
 # Packet functions for transmission
 
@@ -607,6 +607,7 @@ def transmit_data(image_path, env, doomsday_active=False, failed_sensors=None):
 def run_cycle():
     # Check Environment
     env = read_environment()
+    # Correct temp_f if firmware payload is stale/inconsistent.
     env = normalize_temperature_fields(env)
     print("ENV =", env)
 
@@ -635,6 +636,7 @@ def run_cycle():
         heater_state = "HEATER_ERROR"
         
 
+    # Separate sensor-failure mode (doomsday) from normal bad-conditions skip.
     failed_sensors = get_failed_sensors(env)
     doomsday_active = len(failed_sensors) > 0
 
@@ -658,10 +660,12 @@ def run_cycle():
     else:
         cycle_mode = "BAD_CONDITIONS_SKIP"
 
+    # Include cycle outcome so downstream metadata/receiver can reason
     env["heater_state"] = heater_state
     env["cycle_mode"] = cycle_mode
     
     if ok_to_capture:
+        # Skip regular metadata files while in doomsday mode
         if not doomsday_active:
             write_pending_metadata(image_name, env, "IMAGE_REQUESTED")
         success = capture_image(image_name)
